@@ -255,6 +255,21 @@ function App() {
     }
   }
 
+  function handleVirtualKey(letter) {
+    if (gameOver) return;
+
+    if (playerName.trim() === "") {
+      setMessage("Önce oyuncu adını gir.");
+      return;
+    }
+
+    if (currentGuess.length < 5) {
+      setCurrentGuess((prev) => prev + letter);
+    }
+
+    document.querySelector(".game")?.focus();
+  }
+
   function newGame() {
     getRandomWordFromBackend();
     getScoresFromBackend();
@@ -434,6 +449,7 @@ function App() {
               <button
                 key={letter}
                 className="keyboard-key"
+                onClick={() => handleVirtualKey(letter)}
                 style={{
                   backgroundColor: getKeyboardBackgroundColor(letter),
                   color: keyboardColors[letter] ? "white" : "black",
