@@ -287,3 +287,21 @@ h3 {
   margin: 10px auto;
   border-radius: 12px;
 }
+.active-box {
+  animation: cursorBlink 1s infinite;
+  border: 2px solid white;
+}
+
+@keyframes cursorBlink {
+  0% {
+    box-shadow: 0 0 0px white;
+  }
+
+  50% {
+    box-shadow: 0 0 14px white;
+  }
+
+  100% {
+    box-shadow: 0 0 0px white;
+  }
+}

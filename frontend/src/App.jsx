@@ -165,48 +165,25 @@ function App() {
   function evaluateGuess(word) {
   const result = Array(5).fill("red");
   const secretLetters = secretWord.split("");
-  const used = Array(5).fill(false);
+  const remainingLetters = {};
 
-  const lockedGreenPositions = {};
-
-  guesses.forEach((guess) => {
-    guess.result.forEach((color, index) => {
-      if (color === "green") {
-        lockedGreenPositions[guess.word[index]] = index;
-      }
-    });
-  });
-
-  // Önce yeşilleri bul
   for (let i = 0; i < 5; i++) {
     if (word[i] === secretLetters[i]) {
       result[i] = "green";
-      used[i] = true;
+    } else {
+      remainingLetters[secretLetters[i]] =
+        (remainingLetters[secretLetters[i]] || 0) + 1;
     }
   }
 
-  // Sonra turuncuları bul
   for (let i = 0; i < 5; i++) {
     if (result[i] === "green") continue;
 
     const letter = word[i];
 
-    // Daha önce bu harfin doğru yeri bulunduysa,
-    // başka yerde turuncu gösterme.
-    if (
-      lockedGreenPositions[letter] !== undefined &&
-      lockedGreenPositions[letter] !== i
-    ) {
-      result[i] = "red";
-      continue;
-    }
-
-    for (let j = 0; j < 5; j++) {
-      if (!used[j] && secretLetters[j] === letter) {
-        result[i] = "orange";
-        used[j] = true;
-        break;
-      }
+    if (remainingLetters[letter] > 0) {
+      result[i] = "orange";
+      remainingLetters[letter]--;
     }
   }
 
@@ -424,6 +401,11 @@ function App() {
                   className={
                     rowIndex === revealedRow
                       ? `wordle-box reveal-${letterIndex}`
+                      : rowIndex === guesses.length &&
+                        letterIndex === currentGuess.length &&
+                        !gameOver &&
+                        playerName.trim() !== ""
+                      ? "wordle-box active-box"
                       : "wordle-box"
                   }
                   style={{
