@@ -78,7 +78,9 @@ function App() {
     );
 
     if (unknownLetters.length === 0) {
-      setHintMessage("Zaten kelimedeki harfleri biliyorsun, ipucu hakkın yanmadı.");
+      setHintMessage(
+        "Zaten kelimedeki harfleri biliyorsun, ipucu hakkın yanmadı."
+      );
       return;
     }
 
@@ -471,7 +473,6 @@ function App() {
                 <p>
                   Kelime: <strong>{secretWord}</strong>
                 </p>
-                <button onClick={newGame}>Play Again</button>
               </>
             ) : (
               <>
@@ -479,9 +480,44 @@ function App() {
                 <h2>Better luck next time!</h2>
                 <p>Doğru kelime:</p>
                 <h3>{secretWord}</h3>
-                <button onClick={newGame}>Try Again</button>
               </>
             )}
+
+            <div className="end-stats">
+              <div>
+                <span>Games</span>
+                <strong>{stats.gamesPlayed}</strong>
+              </div>
+
+              <div>
+                <span>Wins</span>
+                <strong>{stats.wins}</strong>
+              </div>
+
+              <div>
+                <span>Losses</span>
+                <strong>{stats.losses}</strong>
+              </div>
+
+              <div>
+                <span>Win Rate</span>
+                <strong>%{winRate}</strong>
+              </div>
+
+              <div>
+                <span>Streak</span>
+                <strong>{stats.streak}</strong>
+              </div>
+
+              <div>
+                <span>Best</span>
+                <strong>{stats.bestScore}</strong>
+              </div>
+            </div>
+
+            <button onClick={newGame}>
+              {resultText === "Kazandı" ? "Play Again" : "Try Again"}
+            </button>
           </div>
         </div>
       )}
