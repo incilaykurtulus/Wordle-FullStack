@@ -350,6 +350,13 @@ function App() {
         value={playerName}
         disabled={gameOver}
         onChange={(e) => setPlayerName(e.target.value)}
+        onKeyDown={(e) => {
+          if (e.key === "Enter" && playerName.trim() !== "") {
+            e.target.blur();
+            document.querySelector(".game")?.focus();
+            setMessage("Kelimeni yazabilirsin :)");
+          }
+        }}
       />
 
       <p className="game-info">Kelime gir ve Enter'a bas.</p>
