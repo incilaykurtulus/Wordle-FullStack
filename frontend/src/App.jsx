@@ -4,6 +4,8 @@ import "./App.css";
 function App() {
   const [secretWord, setSecretWord] = useState("");
   const [playerName, setPlayerName] = useState("");
+  const [tempName, setTempName] = useState("");
+  const [showWelcome, setShowWelcome] = useState(true);
   const [nameReady, setNameReady] = useState(false);
   const [currentGuess, setCurrentGuess] = useState("");
   const [guesses, setGuesses] = useState([]);
@@ -17,6 +19,19 @@ function App() {
   const [revealedRow, setRevealedRow] = useState(-1);
   const [shakeRow, setShakeRow] = useState(-1);
   const [showHelp, setShowHelp] = useState(false);
+  const [showStatsPopup, setShowStatsPopup] = useState(false);
+  const [achievements, setAchievements] = useState([]);
+  const [newAchievements, setNewAchievements] = useState([]);
+  const [timerActive, setTimerActive] = useState(false);
+  const [timerSeconds, setTimerSeconds] = useState(0);
+  const [achievementToast, setAchievementToast] = useState(null);
+
+  const achievementList = [
+    { id: "firstWin", title: "First Win", description: "İlk galibiyetini aldın." },
+    { id: "fastSolver", title: "Fast Solver", description: "3 veya daha az denemede bildin." },
+    { id: "winStreak", title: "Win Streak", description: "3 seri galibiyet yaptın." },
+    { id: "persistent", title: "Persistent", description: "10 oyun oynadın." },
+  ];
 
   const [stats, setStats] = useState({
     gamesPlayed: 0,
@@ -30,16 +45,126 @@ function App() {
     getRandomWordFromBackend();
     getScoresFromBackend();
 
-    const savedStats = JSON.parse(localStorage.getItem("wordleStats")) || {
+    setPlayerName("");
+    setTempName("");
+    setNameReady(false);
+    setShowWelcome(true);
+    setStats(getDefaultStats());
+    setAchievements([]);
+  }, []);
+
+  useEffect(() => {
+    let interval = null;
+
+    if (timerActive && !gameOver) {
+      interval = setInterval(() => {
+        setTimerSeconds((prev) => prev + 1);
+      }, 1000);
+    }
+
+    return () => clearInterval(interval);
+  }, [timerActive, gameOver]);
+
+  useEffect(() => {
+    if (achievementToast) {
+      const timeout = setTimeout(() => {
+        setAchievementToast(null);
+      }, 3500);
+
+      return () => clearTimeout(timeout);
+    }
+  }, [achievementToast]);
+
+  function formatTime(seconds) {
+    const minutes = Math.floor(seconds / 60);
+    const remainingSeconds = seconds % 60;
+
+    return `${String(minutes).padStart(2, "0")}:${String(
+      remainingSeconds
+    ).padStart(2, "0")}`;
+  }
+
+  function getDefaultStats() {
+    return {
       gamesPlayed: 0,
       wins: 0,
       losses: 0,
       streak: 0,
       bestScore: "-",
     };
+  }
 
-    setStats(savedStats);
-  }, []);
+  function getPlayerKey(name) {
+    return name.trim().toLocaleLowerCase("tr-TR");
+  }
+
+  async function loadPlayerData(name) {
+    try {
+      const response = await fetch(
+        `http://localhost:5000/players/${encodeURIComponent(name.trim())}`
+      );
+      const data = await response.json();
+
+      setStats(data.stats || getDefaultStats());
+      setAchievements(data.achievements || []);
+    } catch (err) {
+      console.log("Oyuncu bilgisi alınamadı:", err.message);
+      setStats(getDefaultStats());
+      setAchievements([]);
+    }
+
+    setNewAchievements([]);
+    setAchievementToast(null);
+  }
+
+  async function savePlayerData(name, updatedStats, updatedAchievements) {
+    try {
+      await fetch(
+        `http://localhost:5000/players/${encodeURIComponent(name.trim())}`,
+        {
+          method: "PUT",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            stats: updatedStats,
+            achievements: updatedAchievements,
+          }),
+        }
+      );
+    } catch (err) {
+      console.log("Oyuncu bilgisi kaydedilemedi:", err.message);
+    }
+  }
+
+  async function startGameWithName() {
+    if (tempName.trim() === "") {
+      setMessage("Önce oyuncu adını gir.");
+      return;
+    }
+
+    const finalName = tempName.trim();
+
+    setPlayerName(finalName);
+    await loadPlayerData(finalName);
+    setNameReady(true);
+    setShowWelcome(false);
+    setTimerSeconds(0);
+    setTimerActive(true);
+    setMessage("Kelimeni yazabilirsin.");
+
+    setTimeout(() => {
+      document.querySelector(".game")?.focus();
+    }, 100);
+  }
+
+  function changePlayer() {
+    setTempName(playerName);
+    setShowWelcome(true);
+    setNameReady(false);
+    setTimerActive(false);
+    setCurrentGuess("");
+    setMessage("");
+  }
+
 
   async function getRandomWordFromBackend() {
     const response = await fetch("http://localhost:5000/random-word");
@@ -56,6 +181,41 @@ function App() {
   function triggerShake() {
     setShakeRow(guesses.length);
     setTimeout(() => setShakeRow(-1), 500);
+  }
+
+  function checkAchievements(result, attempts, updatedStats) {
+    let earned = [];
+
+    if (result === "win" && !achievements.includes("firstWin")) {
+      earned.push("firstWin");
+    }
+
+    if (result === "win" && attempts <= 3 && !achievements.includes("fastSolver")) {
+      earned.push("fastSolver");
+    }
+
+    if (updatedStats.streak >= 3 && !achievements.includes("winStreak")) {
+      earned.push("winStreak");
+    }
+
+    if (updatedStats.gamesPlayed >= 10 && !achievements.includes("persistent")) {
+      earned.push("persistent");
+    }
+
+    if (earned.length > 0) {
+      const updatedAchievements = [...achievements, ...earned];
+      setAchievements(updatedAchievements);
+      setNewAchievements(earned);
+      setAchievementToast(earned[0]);
+      return updatedAchievements;
+    }
+
+    setNewAchievements([]);
+    return achievements;
+  }
+
+  function getAchievementInfo(id) {
+    return achievementList.find((item) => item.id === id);
   }
 
   function getHint() {
@@ -78,9 +238,7 @@ function App() {
     );
 
     if (unknownLetters.length === 0) {
-      setHintMessage(
-        "Zaten kelimedeki harfleri biliyorsun, ipucu hakkın yanmadı."
-      );
+      setHintMessage("Zaten kelimedeki harfleri biliyorsun, ipucu hakkın yanmadı.");
       return;
     }
 
@@ -94,9 +252,7 @@ function App() {
   async function validateWord(word) {
     const response = await fetch("http://localhost:5000/validate-word", {
       method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-      },
+      headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ guess: word }),
     });
 
@@ -113,9 +269,7 @@ function App() {
 
     const response = await fetch("http://localhost:5000/scores", {
       method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-      },
+      headers: { "Content-Type": "application/json" },
       body: JSON.stringify(newScore),
     });
 
@@ -123,7 +277,7 @@ function App() {
     setTopScores(data);
   }
 
-  function saveStats(result, attempts) {
+  async function saveStats(result, attempts) {
     let updatedStats = { ...stats };
 
     updatedStats.gamesPlayed = updatedStats.gamesPlayed + 1;
@@ -140,8 +294,10 @@ function App() {
       updatedStats.streak = 0;
     }
 
+    const updatedAchievements = checkAchievements(result, attempts, updatedStats);
+
     setStats(updatedStats);
-    localStorage.setItem("wordleStats", JSON.stringify(updatedStats));
+    await savePlayerData(playerName, updatedStats, updatedAchievements);
   }
 
   function updateKeyboardColors(word, result) {
@@ -243,12 +399,14 @@ function App() {
     if (word === secretWord) {
       setMessage("Kazandın!");
       setResultText("Kazandı");
+      setTimerActive(false);
       setTimeout(() => setGameOver(true), 900);
       saveScore(newGuesses.length);
       saveStats("win", newGuesses.length);
     } else if (newGuesses.length >= 6) {
       setMessage("Kaybettin! Kelime: " + secretWord);
       setResultText("Kaybetti");
+      setTimerActive(false);
       setTimeout(() => setGameOver(true), 900);
       saveStats("loss", newGuesses.length);
     } else {
@@ -316,7 +474,11 @@ function App() {
     setKeyboardColors({});
     setRevealedRow(-1);
     setShakeRow(-1);
-    setNameReady(false);
+    setNameReady(playerName.trim() !== "");
+    setNewAchievements([]);
+    setTimerActive(playerName.trim() !== "");
+    setTimerSeconds(0);
+    setAchievementToast(null);
   }
 
   function getRowLetters(rowIndex) {
@@ -350,16 +512,77 @@ function App() {
       ? 0
       : Math.round((stats.wins / stats.gamesPlayed) * 100);
 
+  const achievementRate = Math.round(
+    (achievements.length / achievementList.length) * 100
+  );
+
+  const playerInitial =
+    playerName.trim() !== ""
+      ? playerName.trim()[0].toLocaleUpperCase("tr-TR")
+      : "P";
+
+  const playerXp =
+    stats.gamesPlayed * 8 + stats.wins * 20 + achievements.length * 35;
+
+  const playerLevel = Math.floor(playerXp / 100) + 1;
+  const currentLevelXp = playerXp % 100;
+
   return (
     <div className="game" tabIndex={0} onKeyDown={handleKeyDown}>
+      {achievementToast && (
+        <div className="achievement-toast">
+          <span>Achievement Unlocked</span>
+          <strong>{getAchievementInfo(achievementToast)?.title}</strong>
+          <p>{getAchievementInfo(achievementToast)?.description}</p>
+        </div>
+      )}
+
+      {showWelcome && (
+        <div className="popup-overlay">
+          <div className="popup-card welcome-card">
+            <h2>Welcome Player</h2>
+            <p>Oyuna başlamadan önce oyuncu adını gir.</p>
+
+            <input
+              className="welcome-input"
+              type="text"
+              placeholder="Oyuncu adın"
+              value={tempName}
+              onChange={(e) => setTempName(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === "Enter") {
+                  startGameWithName();
+                }
+              }}
+              autoFocus
+            />
+
+            <button onClick={startGameWithName}>Oyuna Başla</button>
+          </div>
+        </div>
+      )}
+
       <div className="hero">
         <p className="mini-title">Turkish Wordle</p>
         <h1>WORDLE GAME</h1>
         <p className="subtitle">Kelimeyi 6 denemede bul!</p>
 
-        <button className="help-button" onClick={() => setShowHelp(true)}>
-          Nasıl Oynanır?
-        </button>
+        <div className="timer-box">
+          Time: <strong>{formatTime(timerSeconds)}</strong>
+        </div>
+
+        <div className="top-buttons">
+          <button className="help-button" onClick={() => setShowHelp(true)}>
+            Nasıl Oynanır?
+          </button>
+
+          <button
+            className="stats-button"
+            onClick={() => setShowStatsPopup(true)}
+          >
+            Statistics
+          </button>
+        </div>
       </div>
 
       {showHelp && (
@@ -384,6 +607,65 @@ function App() {
             </div>
 
             <button onClick={() => setShowHelp(false)}>Kapat</button>
+          </div>
+        </div>
+      )}
+
+      {showStatsPopup && (
+        <div className="popup-overlay">
+          <div className="popup-card statistics-card">
+            <h2>Statistics</h2>
+
+            <div className="statistics-grid">
+              <div>
+                <span>Games Played</span>
+                <strong>{stats.gamesPlayed}</strong>
+              </div>
+
+              <div>
+                <span>Wins</span>
+                <strong>{stats.wins}</strong>
+              </div>
+
+              <div>
+                <span>Losses</span>
+                <strong>{stats.losses}</strong>
+              </div>
+
+              <div>
+                <span>Win Rate</span>
+                <strong>%{winRate}</strong>
+              </div>
+
+              <div>
+                <span>Current Streak</span>
+                <strong>{stats.streak}</strong>
+              </div>
+
+              <div>
+                <span>Best Score</span>
+                <strong>{stats.bestScore}</strong>
+              </div>
+
+              <div>
+                <span>Achievements</span>
+                <strong>
+                  {achievements.length}/{achievementList.length}
+                </strong>
+              </div>
+
+              <div>
+                <span>Achievement Rate</span>
+                <strong>%{achievementRate}</strong>
+              </div>
+
+              <div className="wide-stat">
+                <span>Current Timer</span>
+                <strong>{formatTime(timerSeconds)}</strong>
+              </div>
+            </div>
+
+            <button onClick={() => setShowStatsPopup(false)}>Close</button>
           </div>
         </div>
       )}
@@ -414,25 +696,46 @@ function App() {
         </div>
       </div>
 
-      <input
-        className="name-input"
-        type="text"
-        placeholder="Oyuncu adını gir"
-        value={playerName}
-        disabled={gameOver}
-        onChange={(e) => {
-          setPlayerName(e.target.value);
-          setNameReady(false);
-        }}
-        onKeyDown={(e) => {
-          if (e.key === "Enter" && playerName.trim() !== "") {
-            setNameReady(true);
-            e.target.blur();
-            document.querySelector(".game")?.focus();
-            setMessage("Kelimeni yazabilirsin.");
-          }
-        }}
-      />
+      {playerName && !showWelcome && (
+        <div className="player-profile-card">
+          <div className="profile-avatar">{playerInitial}</div>
+
+          <div className="profile-info">
+            <span>Player Profile</span>
+            <h3>{playerName}</h3>
+
+            <div className="xp-area">
+              <div className="xp-top">
+                <small>Level {playerLevel}</small>
+                <small>{currentLevelXp}/100 XP</small>
+              </div>
+
+              <div className="xp-bar">
+                <div style={{ width: `${currentLevelXp}%` }}></div>
+              </div>
+            </div>
+          </div>
+
+          <div className="profile-mini-stats">
+            <p>
+              Games <strong>{stats.gamesPlayed}</strong>
+            </p>
+            <p>
+              Win Rate <strong>%{winRate}</strong>
+            </p>
+            <p>
+              Badges{" "}
+              <strong>
+                {achievements.length}/{achievementList.length}
+              </strong>
+            </p>
+          </div>
+
+          <button className="change-player-button" onClick={changePlayer}>
+            Change
+          </button>
+        </div>
+      )}
 
       <p className="game-info">Kelime gir ve Enter'a bas.</p>
 
@@ -444,7 +747,6 @@ function App() {
       </div>
 
       {hintMessage && <p className="hint-message">{hintMessage}</p>}
-
       {message && <h3 className="message">{message}</h3>}
 
       {gameOver && (
@@ -471,6 +773,9 @@ function App() {
                   Deneme sayısı: <strong>{guesses.length}</strong>
                 </p>
                 <p>
+                  Süre: <strong>{formatTime(timerSeconds)}</strong>
+                </p>
+                <p>
                   Kelime: <strong>{secretWord}</strong>
                 </p>
               </>
@@ -478,9 +783,28 @@ function App() {
               <>
                 <div className="popup-icon lose-icon">X</div>
                 <h2>Better luck next time!</h2>
+                <p>
+                  Süre: <strong>{formatTime(timerSeconds)}</strong>
+                </p>
                 <p>Doğru kelime:</p>
                 <h3>{secretWord}</h3>
               </>
+            )}
+
+            {newAchievements.length > 0 && (
+              <div className="new-achievement-box">
+                <h3>Yeni Başarı Kazandın!</h3>
+                {newAchievements.map((achievementId) => {
+                  const achievement = getAchievementInfo(achievementId);
+
+                  return (
+                    <p key={achievementId}>
+                      <strong>{achievement.title}</strong> -{" "}
+                      {achievement.description}
+                    </p>
+                  );
+                })}
+              </div>
             )}
 
             <div className="end-stats">
@@ -554,6 +878,14 @@ function App() {
                   }}
                 >
                   {letter}
+
+                  {rowIndex === guesses.length &&
+                    letterIndex === currentGuess.length &&
+                    !gameOver &&
+                    nameReady &&
+                    currentGuess.length < 5 && (
+                      <span className="typing-cursor"></span>
+                    )}
                 </span>
               ))}
             </div>
@@ -589,18 +921,39 @@ function App() {
         </div>
       </div>
 
-      <div className="leaderboard">
-        <h2>Top 3 Scores</h2>
+      <div className="bottom-panels">
+        <div className="leaderboard">
+          <h2>Top 3 Scores</h2>
 
-        {topScores.length === 0 ? (
-          <p>Henüz skor yok.</p>
-        ) : (
-          topScores.map((score, index) => (
-            <p key={score._id || index}>
-              {medals[index]} {score.name} - {score.attempts} deneme
-            </p>
-          ))
-        )}
+          {topScores.length === 0 ? (
+            <p>Henüz skor yok.</p>
+          ) : (
+            topScores.map((score, index) => (
+              <p key={score._id || index}>
+                {medals[index]} {score.name} - {score.attempts} deneme
+              </p>
+            ))
+          )}
+        </div>
+
+        <div className="achievements-panel">
+          <h2>Achievements</h2>
+
+          {achievements.length === 0 ? (
+            <p>Henüz başarı rozeti yok.</p>
+          ) : (
+            achievements.map((achievementId) => {
+              const achievement = getAchievementInfo(achievementId);
+
+              return (
+                <div key={achievementId} className="achievement-item">
+                  <strong>{achievement.title}</strong>
+                  <span>{achievement.description}</span>
+                </div>
+              );
+            })
+          )}
+        </div>
       </div>
 
       <footer className="footer">
@@ -612,3 +965,6 @@ function App() {
 }
 
 export default App;
+
+
+

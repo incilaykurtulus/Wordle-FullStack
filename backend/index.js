@@ -40,8 +40,57 @@ const wordSchema = new mongoose.Schema({
   },
 });
 
+const playerSchema = new mongoose.Schema({
+  name: {
+    type: String,
+    required: true,
+    unique: true,
+  },
+  stats: {
+    gamesPlayed: {
+      type: Number,
+      default: 0,
+    },
+    wins: {
+      type: Number,
+      default: 0,
+    },
+    losses: {
+      type: Number,
+      default: 0,
+    },
+    streak: {
+      type: Number,
+      default: 0,
+    },
+    bestScore: {
+      type: mongoose.Schema.Types.Mixed,
+      default: "-",
+    },
+  },
+  achievements: {
+    type: [String],
+    default: [],
+  },
+  updatedAt: {
+    type: Date,
+    default: Date.now,
+  },
+});
+
 const Score = mongoose.model("Score", scoreSchema);
 const Word = mongoose.model("Word", wordSchema);
+const Player = mongoose.model("Player", playerSchema);
+
+function getDefaultStats() {
+  return {
+    gamesPlayed: 0,
+    wins: 0,
+    losses: 0,
+    streak: 0,
+    bestScore: "-",
+  };
+}
 
 async function uploadWordsToDatabase() {
   try {
@@ -71,6 +120,12 @@ app.get("/", (req, res) => {
   res.send("Wordle Backend Çalışıyor!");
 });
 
+app.get("/health", (req, res) => {
+  res.json({
+    status: "OK",
+    message: "Backend aktif çalışıyor",
+  });
+});
 app.get("/scores", async (req, res) => {
   try {
     const scores = await Score.find()
@@ -111,6 +166,143 @@ app.post("/scores", async (req, res) => {
   }
 });
 
+app.get("/players/:name", async (req, res) => {
+  try {
+    console.log("PLAYER GET ENDPOINT ÇALIŞTI:", req.params.name);
+
+    const playerName = req.params.name.trim();
+
+    if (!playerName) {
+      return res.status(400).json({
+        message: "Oyuncu adı boş olamaz.",
+      });
+    }
+
+    let player = await Player.findOne({ name: playerName });
+
+    if (!player) {
+      player = new Player({
+        name: playerName,
+        stats: getDefaultStats(),
+        achievements: [],
+      });
+
+      await player.save();
+    }
+
+    res.json(player);
+  } catch (err) {
+    res.status(500).json({
+      message: "Oyuncu bilgisi alınamadı.",
+      error: err.message,
+    });
+  }
+});
+
+app.get("/player/:name", async (req, res) => {
+  try {
+    console.log("PLAYER GET ALIAS ÇALIŞTI:", req.params.name);
+
+    const playerName = req.params.name.trim();
+
+    if (!playerName) {
+      return res.status(400).json({
+        message: "Oyuncu adı boş olamaz.",
+      });
+    }
+
+    let player = await Player.findOne({ name: playerName });
+
+    if (!player) {
+      player = new Player({
+        name: playerName,
+        stats: getDefaultStats(),
+        achievements: [],
+      });
+
+      await player.save();
+    }
+
+    res.json(player);
+  } catch (err) {
+    res.status(500).json({
+      message: "Oyuncu bilgisi alınamadı.",
+      error: err.message,
+    });
+  }
+});
+app.put("/players/:name", async (req, res) => {
+  try {
+    console.log("PLAYER PUT ENDPOINT ÇALIŞTI:", req.params.name);
+
+    const playerName = req.params.name.trim();
+    const { stats, achievements } = req.body;
+
+    if (!playerName) {
+      return res.status(400).json({
+        message: "Oyuncu adı boş olamaz.",
+      });
+    }
+
+    const player = await Player.findOneAndUpdate(
+      { name: playerName },
+      {
+        name: playerName,
+        stats: stats || getDefaultStats(),
+        achievements: achievements || [],
+        updatedAt: new Date(),
+      },
+      {
+        new: true,
+        upsert: true,
+      }
+    );
+
+    res.json(player);
+  } catch (err) {
+    res.status(500).json({
+      message: "Oyuncu bilgisi güncellenemedi.",
+      error: err.message,
+    });
+  }
+});
+
+app.put("/player/:name", async (req, res) => {
+  try {
+    console.log("PLAYER PUT ALIAS ÇALIŞTI:", req.params.name);
+
+    const playerName = req.params.name.trim();
+    const { stats, achievements } = req.body;
+
+    if (!playerName) {
+      return res.status(400).json({
+        message: "Oyuncu adı boş olamaz.",
+      });
+    }
+
+    const player = await Player.findOneAndUpdate(
+      { name: playerName },
+      {
+        name: playerName,
+        stats: stats || getDefaultStats(),
+        achievements: achievements || [],
+        updatedAt: new Date(),
+      },
+      {
+        new: true,
+        upsert: true,
+      }
+    );
+
+    res.json(player);
+  } catch (err) {
+    res.status(500).json({
+      message: "Oyuncu bilgisi güncellenemedi.",
+      error: err.message,
+    });
+  }
+});
+
 app.get("/words", async (req, res) => {
   try {
     const wordList = await Word.find();
@@ -144,14 +336,6 @@ app.post("/validate-word", async (req, res) => {
     });
   }
 });
-
-app.get("/health", (req, res) => {
-  res.json({
-    status: "OK",
-    message: "Backend aktif çalışıyor",
-  });
-});
-
 app.get("/random-word", async (req, res) => {
   try {
     const wordCount = await Word.countDocuments();
@@ -212,6 +396,9 @@ app.get("/game-info", (req, res) => {
       "Score system",
       "MongoDB score storage",
       "MongoDB word storage",
+      "MongoDB player profile storage",
+      "MongoDB player statistics",
+      "MongoDB player achievements",
     ],
   });
 });
