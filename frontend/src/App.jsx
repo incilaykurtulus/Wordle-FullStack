@@ -4,6 +4,7 @@ import "./App.css";
 function App() {
   const [secretWord, setSecretWord] = useState("");
   const [playerName, setPlayerName] = useState("");
+  const [nameReady, setNameReady] = useState(false);
   const [currentGuess, setCurrentGuess] = useState("");
   const [guesses, setGuesses] = useState([]);
   const [message, setMessage] = useState("");
@@ -14,6 +15,9 @@ function App() {
   const [topScores, setTopScores] = useState([]);
   const [keyboardColors, setKeyboardColors] = useState({});
   const [revealedRow, setRevealedRow] = useState(-1);
+  const [shakeRow, setShakeRow] = useState(-1);
+  const [showHelp, setShowHelp] = useState(false);
+
   const [stats, setStats] = useState({
     gamesPlayed: 0,
     wins: 0,
@@ -40,15 +44,18 @@ function App() {
   async function getRandomWordFromBackend() {
     const response = await fetch("http://localhost:5000/random-word");
     const data = await response.json();
-
     setSecretWord(data.word.toLocaleUpperCase("tr-TR"));
   }
 
   async function getScoresFromBackend() {
     const response = await fetch("http://localhost:5000/scores");
     const data = await response.json();
-
     setTopScores(data);
+  }
+
+  function triggerShake() {
+    setShakeRow(guesses.length);
+    setTimeout(() => setShakeRow(-1), 500);
   }
 
   function getHint() {
@@ -71,9 +78,7 @@ function App() {
     );
 
     if (unknownLetters.length === 0) {
-      setHintMessage(
-        "Zaten kelimedeki harfleri biliyorsun, ipucu hakkın yanmadı."
-      );
+      setHintMessage("Zaten kelimedeki harfleri biliyorsun, ipucu hakkın yanmadı.");
       return;
     }
 
@@ -163,32 +168,32 @@ function App() {
   }
 
   function evaluateGuess(word) {
-  const result = Array(5).fill("red");
-  const secretLetters = secretWord.split("");
-  const remainingLetters = {};
+    const result = Array(5).fill("red");
+    const secretLetters = secretWord.split("");
+    const remainingLetters = {};
 
-  for (let i = 0; i < 5; i++) {
-    if (word[i] === secretLetters[i]) {
-      result[i] = "green";
-    } else {
-      remainingLetters[secretLetters[i]] =
-        (remainingLetters[secretLetters[i]] || 0) + 1;
+    for (let i = 0; i < 5; i++) {
+      if (word[i] === secretLetters[i]) {
+        result[i] = "green";
+      } else {
+        remainingLetters[secretLetters[i]] =
+          (remainingLetters[secretLetters[i]] || 0) + 1;
+      }
     }
-  }
 
-  for (let i = 0; i < 5; i++) {
-    if (result[i] === "green") continue;
+    for (let i = 0; i < 5; i++) {
+      if (result[i] === "green") continue;
 
-    const letter = word[i];
+      const letter = word[i];
 
-    if (remainingLetters[letter] > 0) {
-      result[i] = "orange";
-      remainingLetters[letter]--;
+      if (remainingLetters[letter] > 0) {
+        result[i] = "orange";
+        remainingLetters[letter]--;
+      }
     }
-  }
 
-  return result;
-}
+    return result;
+  }
 
   async function submitGuess() {
     if (gameOver) return;
@@ -200,25 +205,32 @@ function App() {
 
     if (playerName.trim() === "") {
       setMessage("Önce oyuncu adını gir.");
+      triggerShake();
+      return;
+    }
+
+    if (!nameReady) {
+      setMessage("İsmini yazdıktan sonra Enter'a bas.");
+      triggerShake();
       return;
     }
 
     if (currentGuess.length !== 5) {
       setMessage("5 harf yazmalısın.");
+      triggerShake();
       return;
     }
 
     const word = currentGuess.toLocaleUpperCase("tr-TR");
-
     const isValidWord = await validateWord(word);
 
     if (!isValidWord) {
       setMessage("Bu kelime sözlükte yok.");
+      triggerShake();
       return;
     }
 
     const result = evaluateGuess(word);
-
     updateKeyboardColors(word, result);
 
     const newGuesses = [...guesses, { word, result }];
@@ -229,13 +241,13 @@ function App() {
     if (word === secretWord) {
       setMessage("Kazandın!");
       setResultText("Kazandı");
-      setGameOver(true);
+      setTimeout(() => setGameOver(true), 900);
       saveScore(newGuesses.length);
       saveStats("win", newGuesses.length);
     } else if (newGuesses.length >= 6) {
       setMessage("Kaybettin! Kelime: " + secretWord);
       setResultText("Kaybetti");
-      setGameOver(true);
+      setTimeout(() => setGameOver(true), 900);
       saveStats("loss", newGuesses.length);
     } else {
       setMessage("Tekrar dene.");
@@ -249,8 +261,14 @@ function App() {
     if (e.key === "Enter") {
       submitGuess();
     } else if (e.key === "Backspace") {
-      setCurrentGuess((prev) => prev.slice(0, -1));
+      handleBackspace();
     } else if (/^[a-zA-ZğüşöçıİĞÜŞÖÇ]$/.test(e.key) && currentGuess.length < 5) {
+      if (!nameReady) {
+        setMessage("Önce ismini yazıp Enter'a bas.");
+        triggerShake();
+        return;
+      }
+
       setCurrentGuess((prev) => prev + e.key.toLocaleUpperCase("tr-TR"));
     }
   }
@@ -260,6 +278,13 @@ function App() {
 
     if (playerName.trim() === "") {
       setMessage("Önce oyuncu adını gir.");
+      triggerShake();
+      return;
+    }
+
+    if (!nameReady) {
+      setMessage("Önce ismini yazıp Enter'a bas.");
+      triggerShake();
       return;
     }
 
@@ -267,6 +292,12 @@ function App() {
       setCurrentGuess((prev) => prev + letter);
     }
 
+    document.querySelector(".game")?.focus();
+  }
+
+  function handleBackspace() {
+    if (gameOver) return;
+    setCurrentGuess((prev) => prev.slice(0, -1));
     document.querySelector(".game")?.focus();
   }
 
@@ -282,6 +313,8 @@ function App() {
     setResultText("");
     setKeyboardColors({});
     setRevealedRow(-1);
+    setShakeRow(-1);
+    setNameReady(false);
   }
 
   function getRowLetters(rowIndex) {
@@ -296,20 +329,10 @@ function App() {
   }
 
   function getBoxBackgroundColor(color) {
-    if (color === "orange") return "#ff8c00";
-    if (color === "green") return "green";
-    if (color === "red") return "red";
+    if (color === "orange") return "#c9a227";
+    if (color === "green") return "#2f9e44";
+    if (color === "red") return "#3a3f4b";
     return "transparent";
-  }
-
-  function getKeyboardBackgroundColor(letter) {
-    const color = keyboardColors[letter];
-
-    if (color === "orange") return "#ff8c00";
-    if (color === "green") return "green";
-    if (color === "red") return "red";
-
-    return "#d3d6da";
   }
 
   const keyboardRows = [
@@ -318,7 +341,8 @@ function App() {
     "ZXCVBNMÖÇ".split(""),
   ];
 
-  const medals = ["🥇", "🥈", "🥉"];
+  const medals = ["1.", "2.", "3."];
+
   const winRate =
     stats.gamesPlayed === 0
       ? 0
@@ -327,32 +351,62 @@ function App() {
   return (
     <div className="game" tabIndex={0} onKeyDown={handleKeyDown}>
       <div className="hero">
-        <p className="mini-title"> Turkish Wordle</p>
+        <p className="mini-title">Turkish Wordle</p>
         <h1>WORDLE GAME</h1>
-        <p className="subtitle"> Kelimeyi 6 denemede bul!!</p>
+        <p className="subtitle">Kelimeyi 6 denemede bul!</p>
+
+        <button className="help-button" onClick={() => setShowHelp(true)}>
+          Nasıl Oynanır?
+        </button>
       </div>
+
+      {showHelp && (
+        <div className="popup-overlay">
+          <div className="popup-card help-card">
+            <h2>Nasıl Oynanır?</h2>
+            <p>5 harfli kelimeyi 6 denemede bulmaya çalış.</p>
+
+            <div className="help-line">
+              <span className="help-box green-box">A</span>
+              <p>Yeşil: Harf doğru yerde.</p>
+            </div>
+
+            <div className="help-line">
+              <span className="help-box orange-box">A</span>
+              <p>Sarı: Harf kelimede var ama yeri yanlış.</p>
+            </div>
+
+            <div className="help-line">
+              <span className="help-box red-box">A</span>
+              <p>Gri: Harf kelimede yok.</p>
+            </div>
+
+            <button onClick={() => setShowHelp(false)}>Kapat</button>
+          </div>
+        </div>
+      )}
 
       <div className="stats-panel">
         <div className="stat-card">
-          <span>🎮</span>
+          <span>Games</span>
           <h4>Oyun</h4>
           <p>{stats.gamesPlayed}</p>
         </div>
 
         <div className="stat-card">
-          <span>🏆</span>
+          <span>Best</span>
           <h4>En İyi</h4>
           <p>{stats.bestScore}</p>
         </div>
 
         <div className="stat-card">
-          <span>🔥</span>
+          <span>Streak</span>
           <h4>Seri</h4>
           <p>{stats.streak}</p>
         </div>
 
         <div className="stat-card">
-          <span>📊</span>
+          <span>Win</span>
           <h4>Oran</h4>
           <p>%{winRate}</p>
         </div>
@@ -364,19 +418,23 @@ function App() {
         placeholder="Oyuncu adını gir"
         value={playerName}
         disabled={gameOver}
-        onChange={(e) => setPlayerName(e.target.value)}
+        onChange={(e) => {
+          setPlayerName(e.target.value);
+          setNameReady(false);
+        }}
         onKeyDown={(e) => {
           if (e.key === "Enter" && playerName.trim() !== "") {
+            setNameReady(true);
             e.target.blur();
             document.querySelector(".game")?.focus();
-            setMessage("Kelimeni yazabilirsin :)");
+            setMessage("Kelimeni yazabilirsin.");
           }
         }}
       />
 
       <p className="game-info">Kelime gir ve Enter'a bas.</p>
 
-      <div>
+      <div className="action-buttons">
         <button onClick={newGame}>Yeni Oyun</button>
         <button onClick={getHint} disabled={hintUsed || gameOver}>
           İpucu Al
@@ -385,27 +443,45 @@ function App() {
 
       {hintMessage && <p className="hint-message">{hintMessage}</p>}
 
-      <h3>{message}</h3>
+      {message && <h3 className="message">{message}</h3>}
 
       {gameOver && (
         <div className="popup-overlay">
-          <div className="popup-card">
+          <div
+            className={
+              resultText === "Kazandı"
+                ? "popup-card win-popup"
+                : "popup-card lose-popup"
+            }
+          >
             {resultText === "Kazandı" ? (
               <>
-                <h2>🎉 TEBRİKLER 🎉</h2>
-                <p>{playerName}</p>
-                <p>{guesses.length} denemede buldun!</p>
-                <p>Kelime: {secretWord}</p>
+                <div className="confetti">
+                  {Array.from({ length: 18 }).map((_, index) => (
+                    <span key={index}></span>
+                  ))}
+                </div>
+
+                <div className="popup-icon win-icon">Trophy</div>
+                <h2>Congratulations!</h2>
+                <p>{playerName}, kelimeyi buldun.</p>
+                <p>
+                  Deneme sayısı: <strong>{guesses.length}</strong>
+                </p>
+                <p>
+                  Kelime: <strong>{secretWord}</strong>
+                </p>
+                <button onClick={newGame}>Play Again</button>
               </>
             ) : (
               <>
-                <h2>😢 OYUN BİTTİ</h2>
-                <p>Kelime:</p>
+                <div className="popup-icon lose-icon">X</div>
+                <h2>Better luck next time!</h2>
+                <p>Doğru kelime:</p>
                 <h3>{secretWord}</h3>
+                <button onClick={newGame}>Try Again</button>
               </>
             )}
-
-            <button onClick={newGame}>Tekrar Oyna</button>
           </div>
         </div>
       )}
@@ -416,17 +492,24 @@ function App() {
           const colors = getRowColors(rowIndex);
 
           return (
-            <div key={rowIndex} className="wordle-row">
+            <div
+              key={rowIndex}
+              className={
+                rowIndex === shakeRow ? "wordle-row shake-row" : "wordle-row"
+              }
+            >
               {letters.map((letter, letterIndex) => (
                 <span
                   key={letterIndex}
                   className={
                     rowIndex === revealedRow
-                      ? `wordle-box reveal-${letterIndex}`
+                      ? `wordle-box reveal-box reveal-${letterIndex}`
+                      : rowIndex === guesses.length && letter
+                      ? "wordle-box pop-box"
                       : rowIndex === guesses.length &&
                         letterIndex === currentGuess.length &&
                         !gameOver &&
-                        playerName.trim() !== ""
+                        nameReady
                       ? "wordle-box active-box"
                       : "wordle-box"
                   }
@@ -448,18 +531,26 @@ function App() {
             {row.map((letter) => (
               <button
                 key={letter}
-                className="keyboard-key"
+                className={`keyboard-key ${
+                  keyboardColors[letter] ? `key-${keyboardColors[letter]}` : ""
+                }`}
                 onClick={() => handleVirtualKey(letter)}
-                style={{
-                  backgroundColor: getKeyboardBackgroundColor(letter),
-                  color: keyboardColors[letter] ? "white" : "black",
-                }}
               >
                 {letter}
               </button>
             ))}
           </div>
         ))}
+
+        <div className="keyboard-row control-row">
+          <button className="keyboard-key control-key" onClick={handleBackspace}>
+            Sil
+          </button>
+
+          <button className="keyboard-key control-key enter-key" onClick={submitGuess}>
+            Enter
+          </button>
+        </div>
       </div>
 
       <div className="leaderboard">
@@ -475,6 +566,11 @@ function App() {
           ))
         )}
       </div>
+
+      <footer className="footer">
+        <p>Made by İncilay Kurtuluş</p>
+        <span>Computer Engineering • Full-Stack Wordle Project</span>
+      </footer>
     </div>
   );
 }
