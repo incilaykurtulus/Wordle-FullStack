@@ -101,7 +101,7 @@ function App() {
   async function loadPlayerData(name) {
     try {
       const response = await fetch(
-        `http://localhost:5000/players/${encodeURIComponent(name.trim())}`
+        `https://wordle-fullstack.onrender.com/players/${encodeURIComponent(name.trim())}`
       );
       const data = await response.json();
 
@@ -120,7 +120,7 @@ function App() {
   async function savePlayerData(name, updatedStats, updatedAchievements) {
     try {
       await fetch(
-        `http://localhost:5000/players/${encodeURIComponent(name.trim())}`,
+        `https://wordle-fullstack.onrender.com/players/${encodeURIComponent(name.trim())}`,
         {
           method: "PUT",
           headers: { "Content-Type": "application/json" },
@@ -167,13 +167,13 @@ function App() {
 
 
   async function getRandomWordFromBackend() {
-    const response = await fetch("http://localhost:5000/random-word");
+    const response = await fetch("https://wordle-fullstack.onrender.com/random-word");
     const data = await response.json();
     setSecretWord(data.word.toLocaleUpperCase("tr-TR"));
   }
 
   async function getScoresFromBackend() {
-    const response = await fetch("http://localhost:5000/scores");
+    const response = await fetch("https://wordle-fullstack.onrender.com/scores");
     const data = await response.json();
     setTopScores(data);
   }
@@ -250,7 +250,7 @@ function App() {
   }
 
   async function validateWord(word) {
-    const response = await fetch("http://localhost:5000/validate-word", {
+    const response = await fetch("https://wordle-fullstack.onrender.com/validate-word", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ guess: word }),
@@ -267,7 +267,7 @@ function App() {
       result: "Kazandı",
     };
 
-    const response = await fetch("http://localhost:5000/scores", {
+    const response = await fetch("https://wordle-fullstack.onrender.com/scores", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(newScore),
@@ -965,6 +965,5 @@ function App() {
 }
 
 export default App;
-
 
 
