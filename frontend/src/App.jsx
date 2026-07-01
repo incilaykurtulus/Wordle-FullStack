@@ -1,8 +1,14 @@
 import { useEffect, useState } from "react";
 import "./App.css";
 
+// ── API base URL (uses Vite proxy in dev, direct URL in prod) ──
+const API_BASE = import.meta.env.VITE_API_URL || "/api";
+
 function App() {
-  const [secretWord, setSecretWord] = useState("");
+  // SECURITY: secretWord is NO LONGER stored client-side.
+  // It lives in the server session and is never exposed until game over.
+  const [revealedWord, setRevealedWord] = useState(""); // Only set on game over
+  const [gameReady, setGameReady] = useState(false); // True when server has selected a word
   const [playerName, setPlayerName] = useState("");
   const [tempName, setTempName] = useState("");
   const [showWelcome, setShowWelcome] = useState(true);
@@ -42,7 +48,7 @@ function App() {
   });
 
   useEffect(() => {
-    getRandomWordFromBackend();
+    startNewGameSession();
     getScoresFromBackend();
 
     setPlayerName("");
@@ -94,14 +100,11 @@ function App() {
     };
   }
 
-  function getPlayerKey(name) {
-    return name.trim().toLocaleLowerCase("tr-TR");
-  }
-
   async function loadPlayerData(name) {
     try {
       const response = await fetch(
-        `https://wordle-fullstack.onrender.com/players/${encodeURIComponent(name.trim())}`
+        `${API_BASE}/players/${encodeURIComponent(name.trim())}`,
+        { credentials: "include" }
       );
       const data = await response.json();
 
@@ -120,10 +123,11 @@ function App() {
   async function savePlayerData(name, updatedStats, updatedAchievements) {
     try {
       await fetch(
-        `https://wordle-fullstack.onrender.com/players/${encodeURIComponent(name.trim())}`,
+        `${API_BASE}/players/${encodeURIComponent(name.trim())}`,
         {
           method: "PUT",
           headers: { "Content-Type": "application/json" },
+          credentials: "include",
           body: JSON.stringify({
             stats: updatedStats,
             achievements: updatedAchievements,
@@ -165,17 +169,38 @@ function App() {
     setMessage("");
   }
 
+  // SECURITY: Server selects the word and stores it in session.
+  // The word is NEVER sent to the client.
+  async function startNewGameSession() {
+    try {
+      const response = await fetch(`${API_BASE}/random-word`, {
+        credentials: "include",
+      });
+      const data = await response.json();
 
-  async function getRandomWordFromBackend() {
-    const response = await fetch("https://wordle-fullstack.onrender.com/random-word");
-    const data = await response.json();
-    setSecretWord(data.word.toLocaleUpperCase("tr-TR"));
+      if (response.ok) {
+        setGameReady(true);
+        setRevealedWord(""); // Clear any previously revealed word
+      } else {
+        setMessage(data.message || "Could not start game.");
+        setGameReady(false);
+      }
+    } catch (err) {
+      console.log("Game start error:", err.message);
+      setGameReady(false);
+    }
   }
 
   async function getScoresFromBackend() {
-    const response = await fetch("https://wordle-fullstack.onrender.com/scores");
-    const data = await response.json();
-    setTopScores(data);
+    try {
+      const response = await fetch(`${API_BASE}/scores`, {
+        credentials: "include",
+      });
+      const data = await response.json();
+      setTopScores(data);
+    } catch (err) {
+      console.log("Scores fetch error:", err.message);
+    }
   }
 
   function triggerShake() {
@@ -218,46 +243,45 @@ function App() {
     return achievementList.find((item) => item.id === id);
   }
 
-  function getHint() {
+  // SECURITY: Hint now comes from server (secret word never on client)
+  async function getHint() {
     if (hintUsed) {
       setHintMessage("İpucu hakkını zaten kullandın.");
       return;
     }
 
-    if (!secretWord) {
+    if (!gameReady) {
       setHintMessage("Kelime henüz hazır değil.");
       return;
     }
 
-    const secretLetters = [...new Set(secretWord.split(""))];
+    try {
+      // Send known letters to server so it can pick an unknown one
+      const knownLetters = Object.entries(keyboardColors)
+        .filter(([, color]) => color === "green" || color === "orange")
+        .map(([letter]) => letter);
 
-    const unknownLetters = secretLetters.filter(
-      (letter) =>
-        keyboardColors[letter] !== "green" &&
-        keyboardColors[letter] !== "orange"
-    );
+      const response = await fetch(`${API_BASE}/hint`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        credentials: "include",
+        body: JSON.stringify({ knownLetters }),
+      });
 
-    if (unknownLetters.length === 0) {
-      setHintMessage("Zaten kelimedeki harfleri biliyorsun, ipucu hakkın yanmadı.");
-      return;
+      const data = await response.json();
+
+      if (data.alreadyUsed) {
+        setHintMessage("İpucu hakkını zaten kullandın.");
+      } else if (data.letter) {
+        setHintMessage(`İpucu: Kelimenin içinde "${data.letter}" harfi var.`);
+        setHintUsed(true);
+      } else {
+        setHintMessage(data.message || "İpucu alınamadı.");
+      }
+    } catch (err) {
+      console.log("Hint error:", err.message);
+      setHintMessage("İpucu alınamadı.");
     }
-
-    const randomLetter =
-      unknownLetters[Math.floor(Math.random() * unknownLetters.length)];
-
-    setHintMessage(`İpucu: Kelimenin içinde "${randomLetter}" harfi var.`);
-    setHintUsed(true);
-  }
-
-  async function validateWord(word) {
-    const response = await fetch("https://wordle-fullstack.onrender.com/validate-word", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ guess: word }),
-    });
-
-    const data = await response.json();
-    return data.valid;
   }
 
   async function saveScore(attempts) {
@@ -267,14 +291,19 @@ function App() {
       result: "Kazandı",
     };
 
-    const response = await fetch("https://wordle-fullstack.onrender.com/scores", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(newScore),
-    });
+    try {
+      const response = await fetch(`${API_BASE}/scores`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        credentials: "include",
+        body: JSON.stringify(newScore),
+      });
 
-    const data = await response.json();
-    setTopScores(data);
+      const data = await response.json();
+      setTopScores(data);
+    } catch (err) {
+      console.log("Score save error:", err.message);
+    }
   }
 
   async function saveStats(result, attempts) {
@@ -325,38 +354,11 @@ function App() {
     setKeyboardColors(newKeyboardColors);
   }
 
-  function evaluateGuess(word) {
-    const result = Array(5).fill("red");
-    const secretLetters = secretWord.split("");
-    const remainingLetters = {};
-
-    for (let i = 0; i < 5; i++) {
-      if (word[i] === secretLetters[i]) {
-        result[i] = "green";
-      } else {
-        remainingLetters[secretLetters[i]] =
-          (remainingLetters[secretLetters[i]] || 0) + 1;
-      }
-    }
-
-    for (let i = 0; i < 5; i++) {
-      if (result[i] === "green") continue;
-
-      const letter = word[i];
-
-      if (remainingLetters[letter] > 0) {
-        result[i] = "orange";
-        remainingLetters[letter]--;
-      }
-    }
-
-    return result;
-  }
-
+  // SECURITY: Guess evaluation is now done SERVER-SIDE via /check-guess
   async function submitGuess() {
     if (gameOver) return;
 
-    if (!secretWord) {
+    if (!gameReady) {
       setMessage("Kelime henüz hazır değil.");
       return;
     }
@@ -380,37 +382,61 @@ function App() {
     }
 
     const word = currentGuess.toLocaleUpperCase("tr-TR");
-    const isValidWord = await validateWord(word);
 
-    if (!isValidWord) {
-      setMessage("Bu kelime sözlükte yok.");
-      triggerShake();
-      return;
-    }
+    try {
+      // Send guess to server for validation + evaluation
+      const response = await fetch(`${API_BASE}/check-guess`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        credentials: "include",
+        body: JSON.stringify({ guess: word }),
+      });
 
-    const result = evaluateGuess(word);
-    updateKeyboardColors(word, result);
+      const data = await response.json();
 
-    const newGuesses = [...guesses, { word, result }];
-    setGuesses(newGuesses);
-    setRevealedRow(newGuesses.length - 1);
-    setCurrentGuess("");
+      if (!response.ok) {
+        setMessage(data.message || "Bir hata oluştu.");
+        triggerShake();
+        return;
+      }
 
-    if (word === secretWord) {
-      setMessage("Kazandın!");
-      setResultText("Kazandı");
-      setTimerActive(false);
-      setTimeout(() => setGameOver(true), 900);
-      saveScore(newGuesses.length);
-      saveStats("win", newGuesses.length);
-    } else if (newGuesses.length >= 6) {
-      setMessage("Kaybettin! Kelime: " + secretWord);
-      setResultText("Kaybetti");
-      setTimerActive(false);
-      setTimeout(() => setGameOver(true), 900);
-      saveStats("loss", newGuesses.length);
-    } else {
-      setMessage("Tekrar dene.");
+      // Word not in dictionary
+      if (data.valid === false) {
+        setMessage("Bu kelime sözlükte yok.");
+        triggerShake();
+        return;
+      }
+
+      // Server returned evaluation result
+      const result = data.result;
+      updateKeyboardColors(word, result);
+
+      const newGuesses = [...guesses, { word, result }];
+      setGuesses(newGuesses);
+      setRevealedRow(newGuesses.length - 1);
+      setCurrentGuess("");
+
+      if (data.correct) {
+        setMessage("Kazandın!");
+        setResultText("Kazandı");
+        setRevealedWord(word); // The word they guessed correctly
+        setTimerActive(false);
+        setTimeout(() => setGameOver(true), 900);
+        saveScore(newGuesses.length);
+        saveStats("win", newGuesses.length);
+      } else if (data.gameOver) {
+        setMessage("Kaybettin! Kelime: " + (data.secretWord || "???"));
+        setResultText("Kaybetti");
+        setRevealedWord(data.secretWord || "???");
+        setTimerActive(false);
+        setTimeout(() => setGameOver(true), 900);
+        saveStats("loss", newGuesses.length);
+      } else {
+        setMessage("Tekrar dene.");
+      }
+    } catch (err) {
+      console.log("Guess submission error:", err.message);
+      setMessage("Tahmin gönderilemedi, tekrar dene.");
     }
   }
 
@@ -462,7 +488,7 @@ function App() {
   }
 
   function newGame() {
-    getRandomWordFromBackend();
+    startNewGameSession();
     getScoresFromBackend();
     setCurrentGuess("");
     setGuesses([]);
@@ -471,6 +497,7 @@ function App() {
     setHintUsed(false);
     setGameOver(false);
     setResultText("");
+    setRevealedWord("");
     setKeyboardColors({});
     setRevealedRow(-1);
     setShakeRow(-1);
@@ -554,6 +581,7 @@ function App() {
                   startGameWithName();
                 }
               }}
+              maxLength={30}
               autoFocus
             />
 
@@ -776,7 +804,7 @@ function App() {
                   Süre: <strong>{formatTime(timerSeconds)}</strong>
                 </p>
                 <p>
-                  Kelime: <strong>{secretWord}</strong>
+                  Kelime: <strong>{revealedWord}</strong>
                 </p>
               </>
             ) : (
@@ -787,7 +815,7 @@ function App() {
                   Süre: <strong>{formatTime(timerSeconds)}</strong>
                 </p>
                 <p>Doğru kelime:</p>
-                <h3>{secretWord}</h3>
+                <h3>{revealedWord}</h3>
               </>
             )}
 
@@ -965,5 +993,3 @@ function App() {
 }
 
 export default App;
-
-
